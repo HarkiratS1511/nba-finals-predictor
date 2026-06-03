@@ -176,8 +176,11 @@ def compute_matchup_adjustments(
 
     # Apply known playoff-context values from research (more accurate than reg season)
     # NYK opponents: 30.5% in playoffs | SAS opponents: ~35.5% estimated
-    t1_opp_fg3_pct = 0.305   # NYK elite 3PT D
-    t2_opp_fg3_pct = 0.355   # SAS average 3PT D
+    # Assign correctly regardless of which slot each team occupies
+    NYK_OPP_FG3 = 0.305   # NYK elite 3PT D
+    SAS_OPP_FG3 = 0.355   # SAS average 3PT D
+    t1_opp_fg3_pct = NYK_OPP_FG3 if team1 == "NYK" else SAS_OPP_FG3
+    t2_opp_fg3_pct = NYK_OPP_FG3 if team2 == "NYK" else SAS_OPP_FG3
 
     adj_3pt = _three_point_adj(
         t1_fg3_pct   = float(t1_base["FG3_PCT"]),
@@ -192,11 +195,9 @@ def compute_matchup_adjustments(
     # Robinson playoff OREB: 39.4% with him, 28.6% without (from research)
     # Regular season OREB: 12.7 pg NYK, 11.4 pg SAS
     # Apply penalty if Robinson questionable (40% discount on his OREB contribution)
-    robinson_oreb_loss = 0.0
-    if robinson_questionable:
-        # OREB drop: ~11 percentage points * 40% chance he's severely limited = ~4.4%
-        # Translate to per-game boards: ~1.8 fewer OREB for NYK per game → Elo penalty
-        robinson_oreb_loss = 8.0   # Elo pts — meaningful but not game-breaking
+    # Robinson penalty always hurts NYK's rebounding regardless of team slot
+    nyk_is_t1 = (team1 == "NYK")
+    robinson_oreb_loss_nyk = 8.0 if robinson_questionable else 0.0
 
     adj_reb = _rebounding_adj(
         t1_oreb     = float(t1_base["OREB"]),
@@ -205,8 +206,11 @@ def compute_matchup_adjustments(
         t2_dreb     = float(t2_base["DREB"]),
         t2_opp_oreb = float(t2_opp["OPP_OREB"]),
         t1_opp_oreb = float(t1_opp["OPP_OREB"]),
-        robinson_penalty = robinson_oreb_loss,
+        robinson_penalty = robinson_oreb_loss_nyk if nyk_is_t1 else 0.0,
     )
+    # If NYK is team2, the penalty flips sign (hurts team2 = benefits team1)
+    if not nyk_is_t1 and robinson_questionable:
+        adj_reb += robinson_oreb_loss_nyk
 
     # ── Turnover matchup ───────────────────────────────────────────────────────
     adj_tov = _turnover_adj(
@@ -231,7 +235,7 @@ def compute_matchup_adjustments(
         "net_adj":   round(net,      1),
         "breakdown": {
             "3PT matchup":   f"{adj_3pt:+.1f} Elo  (NYK 37.3% on 42.7% rate vs SAS 36.0%; NYK D holds opps to 30.5%)",
-            "Rebounding":    f"{adj_reb:+.1f} Elo  (NYK 12.7 OREB vs SAS 11.4; Robinson penalty -{robinson_oreb_loss:.0f} pts)",
+            "Rebounding":    f"{adj_reb:+.1f} Elo  (NYK 12.7 OREB vs SAS 11.4; Robinson penalty -{robinson_oreb_loss_nyk:.0f} pts)",
             "Turnovers":     f"{adj_tov:+.1f} Elo  (NYK forces {t1_opp['OPP_TOV']:.1f}/gm, commits {t1_base['TOV']:.1f}/gm)",
             "Pace variance": f"{adj_pace:+.1f} Elo  (SAS {t2_pace:.1f} pace vs NYK {t1_pace:.1f} — faster pace aids underdog)",
         },

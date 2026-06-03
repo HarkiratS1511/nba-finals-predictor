@@ -30,20 +30,21 @@ from src.matchup import compute_matchup_adjustments
 from src.simulate import simulate_series
 
 # ── 2025-26 Finals matchup ─────────────────────────────────────────────────────
-TEAM1       = "NYK"   # home court (higher seed)
-TEAM2       = "SAS"
+# Spurs have home court — they had the better record and eliminated OKC (top West seed)
+TEAM1       = "SAS"   # home court
+TEAM2       = "NYK"
 FINALS_DATE = "2026-06-04"   # Game 1 tip-off date
 
-# NBA Finals 2-2-1-1-1 home schedule (True = TEAM1 at home)
+# NBA Finals 2-2-1-1-1 home schedule (True = TEAM1 / SAS at home)
 HOME_SCHEDULE = [True, True, False, False, True, False, True]
 GAME_LABELS = [
-    "Game 1  (NYK home)",
-    "Game 2  (NYK home)",
-    "Game 3  (SAS home)",
-    "Game 4  (SAS home)",
-    "Game 5  (NYK home)",
-    "Game 6  (SAS home)*",
-    "Game 7  (NYK home)*",
+    "Game 1  (SAS home)",
+    "Game 2  (SAS home)",
+    "Game 3  (NYK home)",
+    "Game 4  (NYK home)",
+    "Game 5  (SAS home)",
+    "Game 6  (NYK home)*",
+    "Game 7  (SAS home)*",
 ]
 
 
@@ -117,7 +118,7 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
 
     # ── Print: Level 2 context ─────────────────────────────────────────────────
     print_banner("TEAM CONTEXT  (Level 2)")
-    print(f"  {'':30} {'NYK':>8} {'SAS':>8}")
+    print(f"  {'':30} {TEAM1:>8} {TEAM2:>8}")
     print(f"  {'Season net rating':30} {feats['t1_net_rating']:>8.1f} {feats['t2_net_rating']:>8.1f}")
     print(f"  {'Last-15 avg margin':30} {feats['t1_last15_margin']:>8.1f} {feats['t2_last15_margin']:>8.1f}")
     print(f"  {'Blended net rating':30} {feats['t1_blended']:>8.1f} {feats['t2_blended']:>8.1f}")
@@ -125,22 +126,22 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
     print(f"  {'Rest days (before G1)':30} {feats['t1_rest_days']:>8} {feats['t2_rest_days']:>8}")
     print(f"  {'Back-to-back':30} {'YES' if feats['t1_b2b'] else 'no':>8} {'YES' if feats['t2_b2b'] else 'no':>8}")
     print()
-    print(f"  Blended net rating adj : {nr_adj:+.1f} Elo pts  (favours {'NYK' if nr_adj > 0 else 'SAS'})")
+    print(f"  Blended net rating adj : {nr_adj:+.1f} Elo pts  (favours {TEAM1 if nr_adj > 0 else TEAM2})")
     print(f"  Rest adj               : {rest_adj:+.1f} Elo pts")
 
     print_banner("INJURY REPORT  (Level 3)")
     for line in inj["breakdown"]:
         print(line)
     print()
-    print(f"  NYK injury penalty     : -{inj['team1_penalty']:.0f} Elo pts")
-    print(f"  SAS injury penalty     : -{inj['team2_penalty']:.0f} Elo pts")
-    print(f"  Wemby gravity adj      : -{inj['wemby_gravity']:.0f} Elo pts to NYK")
-    print(f"  Net injury adj (NYK)   : {inj_adj:+.1f} Elo pts")
+    print(f"  {TEAM1} injury penalty  : -{inj['team1_penalty']:.0f} Elo pts")
+    print(f"  {TEAM2} injury penalty  : -{inj['team2_penalty']:.0f} Elo pts")
+    print(f"  Wemby gravity adj      : -{inj['wemby_gravity']:.0f} Elo pts to {TEAM2}")
+    print(f"  Net injury adj ({TEAM1}) : {inj_adj:+.1f} Elo pts")
     print()
     print_banner("MATCHUP FACTORS  (Level 4)")
     for factor, desc in matchup["breakdown"].items():
         print(f"  {factor:<18} {desc}")
-    print(f"\n  Net matchup adj (NYK)  : {matchup_adj:+.1f} Elo pts")
+    print(f"\n  Net matchup adj ({TEAM1}) : {matchup_adj:+.1f} Elo pts")
     print(f"\n  ── Total adjustment (L2 + L3 + L4): {total_adj:+.1f} Elo pts ──")
 
     if game is not None:
@@ -156,7 +157,7 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
         return
 
     # ── Print: per-game probabilities ──────────────────────────────────────────
-    print_banner("PER-GAME WIN PROBABILITIES (NYK)")
+    print_banner(f"PER-GAME WIN PROBABILITIES ({TEAM1})")
     for label, is_home in zip(GAME_LABELS, HOME_SCHEDULE):
         p = p_home if is_home else p_team1_away
         bar = "█" * int(p * 20)

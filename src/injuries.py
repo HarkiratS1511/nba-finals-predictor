@@ -148,15 +148,17 @@ def compute_injury_adjustments(
                 f"  ↓ {p.name} ({team2}) [{p.status}] — -{penalty:.0f} Elo pts to {team2}  |  {p.notes}"
             )
 
-    # Wemby gravity benefits team2 (SAS) regardless of injury status
+    # Wemby gravity always benefits SAS regardless of which slot they occupy
     wemby_gravity = WEMBY_GRAVITY_ADJ
+    wemby_team = "SAS"
     breakdown.append(
-        f"  ★ Wembanyama defensive gravity — +{wemby_gravity:.0f} Elo pts to {team2} (rim deterrence above net rating)"
+        f"  ★ Wembanyama defensive gravity — +{wemby_gravity:.0f} Elo pts to {wemby_team} (rim deterrence above net rating)"
     )
 
-    # net_adj > 0 means team1 benefits overall from the injury landscape
-    # team1 benefits when team2 is hurt more, and loses when team1 is hurt more
-    net_adj = t2_penalty - t1_penalty - wemby_gravity
+    # net_adj > 0 means team1 benefits overall
+    # SAS benefits from wemby gravity — add if SAS is team1, subtract if team2
+    wemby_sign = 1.0 if team1 == "SAS" else -1.0
+    net_adj = t2_penalty - t1_penalty + wemby_sign * wemby_gravity
 
     return {
         "team1_penalty":  round(t1_penalty, 1),
