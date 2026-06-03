@@ -52,14 +52,17 @@ def build_ratings(season: str = "2024-25", force: bool = False) -> dict[str, flo
     df = finder.get_data_frames()[0]
 
     # Keep only one row per game (home team perspective) to avoid double-counting
+    # SEASON_ID prefix: "42" = playoffs, "22" = regular season
     df = df.sort_values("GAME_DATE")
     df["IS_HOME"] = ~df["MATCHUP"].str.contains("@")
+    df["IS_PLAYOFF"] = df["SEASON_ID"].astype(str).str.startswith("42")
     home = df[df["IS_HOME"]].copy()
     away = df[~df["IS_HOME"]].copy()
 
     # Merge so each row = one game with both teams' stats
-    games = home.merge(
-        away[["GAME_ID", "TEAM_ABBREVIATION", "WL", "SEASON_TYPE"]],
+    # IS_PLAYOFF comes from the home row (same game, same value)
+    games = home[["GAME_ID", "TEAM_ABBREVIATION", "WL", "IS_PLAYOFF"]].merge(
+        away[["GAME_ID", "TEAM_ABBREVIATION", "WL"]],
         on="GAME_ID",
         suffixes=("_home", "_away"),
     )
@@ -72,7 +75,7 @@ def build_ratings(season: str = "2024-25", force: bool = False) -> dict[str, flo
         ratings.setdefault(h, INITIAL_ELO)
         ratings.setdefault(a, INITIAL_ELO)
 
-        k = K_PLAYOFF if row["SEASON_TYPE"] == "Playoffs" else K_REGULAR
+        k = K_PLAYOFF if row["IS_PLAYOFF"] else K_REGULAR
 
         # Home team gets the advantage baked into expected probability
         e_h = expected(ratings[h] + HOME_ADVANTAGE, ratings[a])
