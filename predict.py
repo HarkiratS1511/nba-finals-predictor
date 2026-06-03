@@ -1,5 +1,10 @@
 """
-NBA Finals Predictor — Elo baseline.
+NBA Finals Predictor — Level 1 smart Elo.
+
+Improvements over baseline:
+  - Recency-weighted K-factor (recent games count more)
+  - Margin-of-victory multiplier (blowouts shift ratings more)
+  - Per-team home court advantage (calibrated from season home/away record)
 
 Usage:
     python predict.py                        # full series prediction
@@ -37,17 +42,17 @@ def print_banner(text: str) -> None:
 
 
 def run(game: int | None = None, refresh: bool = False) -> None:
-    ratings = build_ratings(force=refresh)
+    ratings, hca = build_ratings(force=refresh)
 
     r1 = ratings.get(TEAM1, 1500)
     r2 = ratings.get(TEAM2, 1500)
-    p_home = win_prob(TEAM1, TEAM2, ratings)   # TEAM1 at home
-    p_away = win_prob(TEAM2, TEAM1, ratings)   # TEAM1 away = TEAM2 home prob flipped
+    p_home = win_prob(TEAM1, TEAM2, ratings, hca)   # TEAM1 at home
+    p_away = win_prob(TEAM2, TEAM1, ratings, hca)   # TEAM2 at home
     p_team1_away = 1 - p_away
 
-    print_banner("ELO RATINGS")
-    print(f"  {TEAM1}: {r1:.1f}")
-    print(f"  {TEAM2}: {r2:.1f}")
+    print_banner("ELO RATINGS  (Level 1 — smart Elo)")
+    print(f"  {TEAM1}: {r1:.1f}  (home court adj: +{hca.get(TEAM1, 100):.0f} pts)")
+    print(f"  {TEAM2}: {r2:.1f}  (home court adj: +{hca.get(TEAM2, 100):.0f} pts)")
     print(f"  Elo gap: {r1 - r2:+.1f} pts")
 
     if game is not None:
