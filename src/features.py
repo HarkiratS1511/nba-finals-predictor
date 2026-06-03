@@ -22,8 +22,10 @@ from nba_api.stats.endpoints import leaguedashteamstats, leaguegamefinder
 FEATURES_CACHE = Path(__file__).parent.parent / "data" / "features.json"
 
 # How much to weight recent form vs full season (must sum to 1.0)
-RECENT_WEIGHT = 0.65
-SEASON_WEIGHT = 0.35
+# 50/50 — recent form matters but so does who you've been all season.
+# Previously 65/35 was too aggressive and inflated NYK's hot streak.
+RECENT_WEIGHT = 0.50
+SEASON_WEIGHT = 0.50
 
 LAST_N_GAMES = 15
 
@@ -76,10 +78,33 @@ def _rest_days(last_game_date: str, game_date: str) -> int:
     return (d2 - d1).days - 1   # -1 because game day itself is not a rest day
 
 
-def _last_n_margin(game_log: pd.DataFrame, team_abbrev: str, n: int = LAST_N_GAMES) -> float:
-    """Average point margin over the last N games for a team."""
-    team_games = game_log[game_log["TEAM_ABBREVIATION"] == team_abbrev]
-    return team_games.tail(n)["PLUS_MINUS"].mean()
+def _get_opponent(matchup: str, team: str) -> str:
+    """Extract opponent abbreviation from a MATCHUP string like 'NYK vs. BOS' or 'NYK @ BOS'."""
+    parts = matchup.replace("vs.", "").replace("@", "").split()
+    return next(p for p in parts if p != team)
+
+
+def _last_n_margin(
+    game_log: pd.DataFrame,
+    team_abbrev: str,
+    elo_ratings: dict[str, float],
+    n: int = LAST_N_GAMES,
+) -> float:
+    """
+    Opponent-adjusted average point margin over the last N games.
+
+    Each game's margin is scaled by (opponent_elo / league_avg_elo) so that
+    blowouts against elite opponents count more than blowouts against bottom feeders.
+    """
+    team_games = game_log[game_log["TEAM_ABBREVIATION"] == team_abbrev].tail(n).copy()
+    league_avg = sum(elo_ratings.values()) / len(elo_ratings)
+
+    team_games["OPP"] = team_games["MATCHUP"].apply(lambda m: _get_opponent(m, team_abbrev))
+    team_games["OPP_ELO"] = team_games["OPP"].map(lambda o: elo_ratings.get(o, league_avg))
+    team_games["OPP_WEIGHT"] = team_games["OPP_ELO"] / league_avg
+    team_games["ADJ_MARGIN"] = team_games["PLUS_MINUS"] * team_games["OPP_WEIGHT"]
+
+    return team_games["ADJ_MARGIN"].mean()
 
 
 def _build_name_to_abbrev(game_log: pd.DataFrame) -> dict[str, str]:
@@ -95,8 +120,9 @@ def _build_name_to_abbrev(game_log: pd.DataFrame) -> dict[str, str]:
 def build_features(
     team1: str,
     team2: str,
-    game_date: str,          # "YYYY-MM-DD" — date of the upcoming game
+    game_date: str,                          # "YYYY-MM-DD" — date of the upcoming game
     season: str = "2025-26",
+    elo_ratings: dict[str, float] | None = None,  # used for opponent-adjusting margins
     force: bool = False,
 ) -> dict:
     """
@@ -136,9 +162,12 @@ def build_features(
     t1_rest = _rest_days(t1_last, game_date)
     t2_rest = _rest_days(t2_last, game_date)
 
-    # Last-N margin as a proxy for recent net rating
-    t1_recent = _last_n_margin(glog, team1)
-    t2_recent = _last_n_margin(glog, team2)
+    # Opponent-adjusted last-N margin — scales each game by opponent strength
+    # Falls back to raw margin if no Elo ratings supplied
+    if elo_ratings is None:
+        elo_ratings = {team1: 1500, team2: 1500}
+    t1_recent = _last_n_margin(glog, team1, elo_ratings)
+    t2_recent = _last_n_margin(glog, team2, elo_ratings)
 
     # Blended net rating: weight recent form more than full season
     t1_blended = RECENT_WEIGHT * t1_recent + SEASON_WEIGHT * t1["NET_RATING"]
