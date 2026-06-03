@@ -1,5 +1,5 @@
 """
-NBA Finals Predictor — Level 1 + Level 2.
+NBA Finals Predictor — Level 1 + Level 2 + Level 3.
 
 Level 1 (smart Elo):
   - Recency-weighted K-factor
@@ -11,6 +11,10 @@ Level 2 (team context):
   - Rest days & back-to-back flag
   - Pace differential
 
+Level 3 (lineup & injuries):
+  - Per-player impact penalty for injuries (scaled by status severity)
+  - Wembanyama defensive gravity adjustment (rim deterrence above net rating)
+
 Usage:
     python predict.py                        # full series prediction
     python predict.py --game 1               # single game prediction
@@ -21,6 +25,7 @@ import argparse
 
 from src.elo import build_ratings, win_prob
 from src.features import build_features
+from src.injuries import compute_injury_adjustments
 from src.simulate import simulate_series
 
 # ── 2025-26 Finals matchup ─────────────────────────────────────────────────────
@@ -81,10 +86,15 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
     # ── Level 2 adjustments ────────────────────────────────────────────────────
     nr_adj   = net_rating_adjustment(feats["blended_delta"])
     rest_adj = rest_adjustment(feats["rest_delta"], feats["t1_b2b"], feats["t2_b2b"])
-    total_adj = nr_adj + rest_adj
 
-    # Apply adjustment to Elo gap — positive = benefits TEAM1
-    p_home      = win_prob(TEAM1, TEAM2, ratings, hca, extra_home_adj=total_adj)
+    # ── Level 3 adjustments ────────────────────────────────────────────────────
+    inj = compute_injury_adjustments(TEAM1, TEAM2)
+    inj_adj = inj["net_adj"]   # positive = benefits TEAM1
+
+    total_adj = nr_adj + rest_adj + inj_adj
+
+    # Apply total adjustment — positive = benefits TEAM1 (home)
+    p_home       = win_prob(TEAM1, TEAM2, ratings, hca, extra_home_adj=total_adj)
     p_team1_away = win_prob(TEAM1, TEAM2, ratings, hca, extra_home_adj=total_adj - 2 * hca.get(TEAM1, 59))
 
     # ── Print: Elo ─────────────────────────────────────────────────────────────
@@ -105,7 +115,17 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
     print()
     print(f"  Blended net rating adj : {nr_adj:+.1f} Elo pts  (favours {'NYK' if nr_adj > 0 else 'SAS'})")
     print(f"  Rest adj               : {rest_adj:+.1f} Elo pts")
-    print(f"  Total Level-2 adj      : {total_adj:+.1f} Elo pts")
+
+    print_banner("INJURY REPORT  (Level 3)")
+    for line in inj["breakdown"]:
+        print(line)
+    print()
+    print(f"  NYK injury penalty     : -{inj['team1_penalty']:.0f} Elo pts")
+    print(f"  SAS injury penalty     : -{inj['team2_penalty']:.0f} Elo pts")
+    print(f"  Wemby gravity adj      : -{inj['wemby_gravity']:.0f} Elo pts to NYK")
+    print(f"  Net injury adj (NYK)   : {inj_adj:+.1f} Elo pts")
+    print()
+    print(f"  ── Total adjustment (L2 + L3): {total_adj:+.1f} Elo pts ──")
 
     if game is not None:
         idx = game - 1
