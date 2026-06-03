@@ -180,11 +180,18 @@ def win_prob(
     away_team: str,
     ratings: Optional[dict[str, float]] = None,
     hca: Optional[dict[str, float]] = None,
+    extra_home_adj: float = 0.0,
 ) -> float:
-    """Win probability for the home team (0–1), using per-team HCA if available."""
+    """
+    Win probability for home_team (0–1).
+
+    extra_home_adj: additional Elo-point adjustment applied to the home team
+                    (positive = benefits home team). Used by Level 2+ to fold
+                    in net rating, rest, and other context signals.
+    """
     if ratings is None or hca is None:
         ratings, hca = build_ratings()
     r_h = ratings.get(home_team, INITIAL_ELO)
     r_a = ratings.get(away_team, INITIAL_ELO)
     team_hca = (hca.get(home_team, DEFAULT_HCA) + hca.get(away_team, DEFAULT_HCA)) / 2
-    return expected(r_h + team_hca, r_a)
+    return expected(r_h + team_hca + extra_home_adj, r_a)

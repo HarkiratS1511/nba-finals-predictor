@@ -1,26 +1,32 @@
 """
-NBA Finals Predictor — Level 1 smart Elo.
+NBA Finals Predictor — Level 1 + Level 2.
 
-Improvements over baseline:
-  - Recency-weighted K-factor (recent games count more)
-  - Margin-of-victory multiplier (blowouts shift ratings more)
-  - Per-team home court advantage (calibrated from season home/away record)
+Level 1 (smart Elo):
+  - Recency-weighted K-factor
+  - Margin-of-victory multiplier
+  - Per-team home court advantage
+
+Level 2 (team context):
+  - Blended net rating (65% last-15 games, 35% full season)
+  - Rest days & back-to-back flag
+  - Pace differential
 
 Usage:
     python predict.py                        # full series prediction
     python predict.py --game 1               # single game prediction
-    python predict.py --refresh              # force-rebuild Elo from API
+    python predict.py --refresh              # force-rebuild all data from API
 """
 
 import argparse
 
 from src.elo import build_ratings, win_prob
+from src.features import build_features
 from src.simulate import simulate_series
 
-# ── 2025 Finals matchup ────────────────────────────────────────────────────────
-# Knicks have home court (better record)
-TEAM1 = "NYK"   # home court
-TEAM2 = "SAS"
+# ── 2025-26 Finals matchup ─────────────────────────────────────────────────────
+TEAM1       = "NYK"   # home court (higher seed)
+TEAM2       = "SAS"
+FINALS_DATE = "2026-06-04"   # Game 1 tip-off date
 
 # NBA Finals 2-2-1-1-1 home schedule (True = TEAM1 at home)
 HOME_SCHEDULE = [True, True, False, False, True, False, True]
@@ -36,24 +42,70 @@ GAME_LABELS = [
 
 
 def print_banner(text: str) -> None:
-    print("\n" + "─" * 52)
+    print("\n" + "─" * 56)
     print(f"  {text}")
-    print("─" * 52)
+    print("─" * 56)
+
+
+def net_rating_adjustment(blended_delta: float) -> float:
+    """
+    Convert blended net rating delta into an Elo-point adjustment.
+    Each 1-point net rating difference ≈ 25 Elo points (empirically derived).
+    Capped at ±150 to prevent extreme overrides of Elo.
+    """
+    return max(-150.0, min(150.0, blended_delta * 25))
+
+
+def rest_adjustment(rest_delta: int, t1_b2b: bool, t2_b2b: bool) -> float:
+    """
+    Elo-point adjustment for rest advantage.
+    Each extra rest day ≈ +10 Elo pts, capped at ±40.
+    B2B team loses ~30 Elo pts on top of rest adjustment.
+    """
+    adj = max(-40.0, min(40.0, rest_delta * 10.0))
+    if t2_b2b:
+        adj += 30.0   # opponent is on b2b, good for t1
+    if t1_b2b:
+        adj -= 30.0   # we're on b2b, bad for t1
+    return adj
 
 
 def run(game: int | None = None, refresh: bool = False, season: str = "2025-26") -> None:
+    # ── Load data ──────────────────────────────────────────────────────────────
     ratings, hca = build_ratings(season=season, force=refresh)
+    feats = build_features(TEAM1, TEAM2, FINALS_DATE, season=season, force=refresh)
 
     r1 = ratings.get(TEAM1, 1500)
     r2 = ratings.get(TEAM2, 1500)
-    p_home = win_prob(TEAM1, TEAM2, ratings, hca)   # TEAM1 at home
-    p_away = win_prob(TEAM2, TEAM1, ratings, hca)   # TEAM2 at home
-    p_team1_away = 1 - p_away
 
+    # ── Level 2 adjustments ────────────────────────────────────────────────────
+    nr_adj   = net_rating_adjustment(feats["blended_delta"])
+    rest_adj = rest_adjustment(feats["rest_delta"], feats["t1_b2b"], feats["t2_b2b"])
+    total_adj = nr_adj + rest_adj
+
+    # Apply adjustment to Elo gap — positive = benefits TEAM1
+    p_home      = win_prob(TEAM1, TEAM2, ratings, hca, extra_home_adj=total_adj)
+    p_team1_away = win_prob(TEAM1, TEAM2, ratings, hca, extra_home_adj=total_adj - 2 * hca.get(TEAM1, 59))
+
+    # ── Print: Elo ─────────────────────────────────────────────────────────────
     print_banner("ELO RATINGS  (Level 1 — smart Elo)")
-    print(f"  {TEAM1}: {r1:.1f}  (home court adj: +{hca.get(TEAM1, 100):.0f} pts)")
-    print(f"  {TEAM2}: {r2:.1f}  (home court adj: +{hca.get(TEAM2, 100):.0f} pts)")
-    print(f"  Elo gap: {r1 - r2:+.1f} pts")
+    print(f"  {TEAM1}: {r1:.1f}  (HCA: +{hca.get(TEAM1, 100):.0f} pts)")
+    print(f"  {TEAM2}: {r2:.1f}  (HCA: +{hca.get(TEAM2, 100):.0f} pts)")
+    print(f"  Raw Elo gap: {r1 - r2:+.1f} pts")
+
+    # ── Print: Level 2 context ─────────────────────────────────────────────────
+    print_banner("TEAM CONTEXT  (Level 2)")
+    print(f"  {'':30} {'NYK':>8} {'SAS':>8}")
+    print(f"  {'Season net rating':30} {feats['t1_net_rating']:>8.1f} {feats['t2_net_rating']:>8.1f}")
+    print(f"  {'Last-15 avg margin':30} {feats['t1_last15_margin']:>8.1f} {feats['t2_last15_margin']:>8.1f}")
+    print(f"  {'Blended net rating':30} {feats['t1_blended']:>8.1f} {feats['t2_blended']:>8.1f}")
+    print(f"  {'Pace':30} {feats['t1_pace']:>8.1f} {feats['t2_pace']:>8.1f}")
+    print(f"  {'Rest days (before G1)':30} {feats['t1_rest_days']:>8} {feats['t2_rest_days']:>8}")
+    print(f"  {'Back-to-back':30} {'YES' if feats['t1_b2b'] else 'no':>8} {'YES' if feats['t2_b2b'] else 'no':>8}")
+    print()
+    print(f"  Blended net rating adj : {nr_adj:+.1f} Elo pts  (favours {'NYK' if nr_adj > 0 else 'SAS'})")
+    print(f"  Rest adj               : {rest_adj:+.1f} Elo pts")
+    print(f"  Total Level-2 adj      : {total_adj:+.1f} Elo pts")
 
     if game is not None:
         idx = game - 1
@@ -67,14 +119,14 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
         print(f"  {TEAM2} win probability : {(1-p)*100:.1f}%")
         return
 
-    # Per-game probabilities
+    # ── Print: per-game probabilities ──────────────────────────────────────────
     print_banner("PER-GAME WIN PROBABILITIES (NYK)")
-    for i, (label, is_home) in enumerate(zip(GAME_LABELS, HOME_SCHEDULE)):
+    for label, is_home in zip(GAME_LABELS, HOME_SCHEDULE):
         p = p_home if is_home else p_team1_away
         bar = "█" * int(p * 20)
         print(f"  {label:<26} {p*100:5.1f}%  {bar}")
 
-    # Series simulation
+    # ── Print: series simulation ───────────────────────────────────────────────
     result = simulate_series(p_home, p_team1_away, n=100_000)
 
     print_banner("SERIES PREDICTION  (100k simulations)")
@@ -90,9 +142,9 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="NBA Finals predictor (Elo baseline)")
-    parser.add_argument("--game", type=int, help="Predict a specific game (1–7)")
-    parser.add_argument("--refresh", action="store_true", help="Force-refresh Elo from API")
-    parser.add_argument("--season", default="2025-26", help="NBA season (default: 2025-26)")
+    parser = argparse.ArgumentParser(description="NBA Finals predictor")
+    parser.add_argument("--game",    type=int,          help="Predict a specific game (1–7)")
+    parser.add_argument("--refresh", action="store_true", help="Force-refresh all data from API")
+    parser.add_argument("--season",  default="2025-26", help="NBA season (default: 2025-26)")
     args = parser.parse_args()
     run(game=args.game, refresh=args.refresh, season=args.season)
