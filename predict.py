@@ -26,6 +26,7 @@ import argparse
 from src.elo import build_ratings, win_prob
 from src.features import build_features
 from src.injuries import compute_injury_adjustments
+from src.matchup import compute_matchup_adjustments
 from src.simulate import simulate_series
 
 # ── 2025-26 Finals matchup ─────────────────────────────────────────────────────
@@ -93,9 +94,16 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
 
     # ── Level 3 adjustments ────────────────────────────────────────────────────
     inj = compute_injury_adjustments(TEAM1, TEAM2)
-    inj_adj = inj["net_adj"]   # positive = benefits TEAM1
+    inj_adj = inj["net_adj"]
 
-    total_adj = nr_adj + rest_adj + inj_adj
+    # ── Level 4 adjustments ────────────────────────────────────────────────────
+    matchup = compute_matchup_adjustments(
+        TEAM1, TEAM2, r1, r2, season=season,
+        robinson_questionable=(inj["team1_penalty"] > 0),
+    )
+    matchup_adj = matchup["net_adj"]
+
+    total_adj = nr_adj + rest_adj + inj_adj + matchup_adj
 
     # Apply total adjustment — positive = benefits TEAM1 (home)
     p_home       = win_prob(TEAM1, TEAM2, ratings, hca, extra_home_adj=total_adj)
@@ -129,7 +137,11 @@ def run(game: int | None = None, refresh: bool = False, season: str = "2025-26")
     print(f"  Wemby gravity adj      : -{inj['wemby_gravity']:.0f} Elo pts to NYK")
     print(f"  Net injury adj (NYK)   : {inj_adj:+.1f} Elo pts")
     print()
-    print(f"  ── Total adjustment (L2 + L3): {total_adj:+.1f} Elo pts ──")
+    print_banner("MATCHUP FACTORS  (Level 4)")
+    for factor, desc in matchup["breakdown"].items():
+        print(f"  {factor:<18} {desc}")
+    print(f"\n  Net matchup adj (NYK)  : {matchup_adj:+.1f} Elo pts")
+    print(f"\n  ── Total adjustment (L2 + L3 + L4): {total_adj:+.1f} Elo pts ──")
 
     if game is not None:
         idx = game - 1
