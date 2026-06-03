@@ -55,10 +55,14 @@ def print_banner(text: str) -> None:
 def net_rating_adjustment(blended_delta: float) -> float:
     """
     Convert blended net rating delta into an Elo-point adjustment.
-    Each 1-point net rating difference ≈ 25 Elo points (empirically derived).
-    Capped at ±150 to prevent extreme overrides of Elo.
+
+    Calibration: 1 pt of net rating ≈ 8 Elo pts in a playoff context.
+    Full-season conversion (FiveThirtyEight) is ~25 pts, but in a Finals
+    series both teams are elite and the sample is small — dampening prevents
+    recent-form noise from overwhelming Elo signal.
+    Capped at ±50 so no single feature dominates.
     """
-    return max(-150.0, min(150.0, blended_delta * 25))
+    return max(-50.0, min(50.0, blended_delta * 8))
 
 
 def rest_adjustment(rest_delta: int, t1_b2b: bool, t2_b2b: bool) -> float:
@@ -78,7 +82,7 @@ def rest_adjustment(rest_delta: int, t1_b2b: bool, t2_b2b: bool) -> float:
 def run(game: int | None = None, refresh: bool = False, season: str = "2025-26") -> None:
     # ── Load data ──────────────────────────────────────────────────────────────
     ratings, hca = build_ratings(season=season, force=refresh)
-    feats = build_features(TEAM1, TEAM2, FINALS_DATE, season=season, force=refresh)
+    feats = build_features(TEAM1, TEAM2, FINALS_DATE, season=season, elo_ratings=ratings, force=refresh)
 
     r1 = ratings.get(TEAM1, 1500)
     r2 = ratings.get(TEAM2, 1500)
