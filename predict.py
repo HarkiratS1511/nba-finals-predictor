@@ -41,8 +41,8 @@ def print_banner(text: str) -> None:
     print("─" * 52)
 
 
-def run(game: int | None = None, refresh: bool = False) -> None:
-    ratings, hca = build_ratings(force=refresh)
+def run(game: int | None = None, refresh: bool = False, season: str = "2025-26") -> None:
+    ratings, hca = build_ratings(season=season, force=refresh)
 
     r1 = ratings.get(TEAM1, 1500)
     r2 = ratings.get(TEAM2, 1500)
@@ -93,5 +93,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="NBA Finals predictor (Elo baseline)")
     parser.add_argument("--game", type=int, help="Predict a specific game (1–7)")
     parser.add_argument("--refresh", action="store_true", help="Force-refresh Elo from API")
+    parser.add_argument("--season", default="2025-26", help="NBA season (default: 2025-26)")
     args = parser.parse_args()
-    run(game=args.game, refresh=args.refresh)
+    run(game=args.game, refresh=args.refresh, season=args.season)

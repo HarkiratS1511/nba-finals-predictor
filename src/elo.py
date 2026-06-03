@@ -96,7 +96,7 @@ def build_hca(df: pd.DataFrame) -> dict[str, float]:
 
 # ── Rating builder ─────────────────────────────────────────────────────────────
 
-def build_ratings(season: str = "2024-25", force: bool = False) -> tuple[dict[str, float], dict[str, float]]:
+def build_ratings(season: str = "2025-26", force: bool = False) -> tuple[dict[str, float], dict[str, float]]:
     """
     Fetch every game for *season*, replay them in chronological order using
     Level-1 smart Elo, and return (elo_ratings, hca_per_team).
