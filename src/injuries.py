@@ -80,9 +80,8 @@ INJURY_REPORT: list[Player] = [
         name="Mitchell Robinson",
         team="NYK",
         full_impact_elo=45.0,
-        status="questionable",   # broken right pinkie, day-to-day
-        notes="Broken right pinkie. Day-to-day. Primary interior defender vs Wemby. "
-              "NYK went 0-1 vs SAS without him this season — Wemby had 31 on 12 shots.",
+        status="healthy",        # confirmed playing Game 1
+        notes="Confirmed active for Game 1. Broken pinkie was a concern but he's out there.",
     ),
     Player(
         name="De'Aaron Fox",
